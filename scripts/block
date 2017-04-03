@@ -25,9 +25,27 @@ XAPI=/xapi/${DOMID}/hotplug/${TYPE}/${DEVID}
 
 case "$1" in
 add)
-        xenstore-write "${XAPI}/hotplug" "online"
-        ;;
+    PARAMS=$(xenstore-read "${XENBUS_PATH}/params")
+    MINOR=$(stat -c '%T' ${PARAMS})
+    xenstore-write "${XENBUS_PATH}/physical-device" "fe:${MINOR}"
+    xenstore-write "${XENBUS_PATH}/physical-device-path" "${PARAMS}"
+
+    xenstore-watch -n 2 "${XENBUS_PATH}/state" 2>/dev/null &
+    watch_pid=$!
+    xenbus_state=$(xenstore-read "${XENBUS_PATH}/state" 2>/dev/null || echo "unknown")
+    if [ "$xenbus_state" == "1" ] ; then
+        wait $watch_pid
+        xenbus_state=$(xenstore-read "${XENBUS_PATH}/state" 2>/dev/null || echo "unknown")
+    fi
+    if [ "$xenbus_state" != "2" ] ; then
+        echo "FATAL: ${XENBUS_PATH}/state : $xenbus_state"
+        exit 1
+    fi
+
+    xenstore-write "${XAPI}/hotplug" "online"
+    ;;
+
 remove)
-        xenstore-rm "/xapi/${DOMID}"
-        ;;
+    xenstore-rm "/xapi/${DOMID}"
+    ;;
 esac
